@@ -174,7 +174,7 @@ PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     --output_path="${WORKING_DIR}"/default_trace \
     --gin_files=compiler_opt/rl/regalloc/gin_configs/common.gin \
     --gin_bindings=clang_path="'${WORKING_DIR}/llvm-build/bin/clang'" \
-    --sampling_rate=0.2
+    --sampling_rate=0.5
 
 rm -rf ./compiler_opt/rl/regalloc/vocab
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
