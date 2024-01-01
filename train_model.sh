@@ -47,9 +47,9 @@ for arg in "$@"; do
         "--arch"*)
             KARCH="${arg#*=}"
             if [[ $KARCH == "arm64" ]]; then
-                GLOBAL_CMDS='["-march=armv8.2-a", "--target=aarch64-linux-gnu", "-fshort-wchar", "-funsigned-char", "-fintegrated-as", "-fno-common", "-fno-PIE", "-O2", "-fno-strict-overflow", "-fno-stack-check", "-fstrict-flex-arrays=3", "-nostdinc", "fno-strict-aliasing", "-c"]'
+                GLOBAL_CMDS='["-march=armv8.2-a", "--target=aarch64-linux-gnu", "-fshort-wchar", "-funsigned-char", "-fintegrated-as", "-fno-common", "-fno-PIE", "-O2", "-fno-strict-overflow", "-fno-stack-check", "-fstrict-flex-arrays=3", "-nostdinc", "-fno-strict-aliasing", "-c"]'
             elif [[ $KARCH == "x86" ]] || [[ $KARCH == "x86_64" ]]; then
-                GLOBAL_CMDS='["-fshort-wchar", "-funsigned-char", "-fintegrated-as", "-fno-common", "-fno-PIE", "-O2", "-fno-strict-overflow", "-fno-stack-check", "-fstrict-flex-arrays=3", "-nostdinc", "fno-strict-aliasing", "-c"]'
+                GLOBAL_CMDS='["-fshort-wchar", "-funsigned-char", "-fintegrated-as", "-fno-common", "-fno-PIE", "-O2", "-fno-strict-overflow", "-fno-stack-check", "-fstrict-flex-arrays=3", "-nostdinc", "-fno-strict-aliasing", "-c"]'
             else
                 echo "$KARCH is invalid or not supported!"
             fi
