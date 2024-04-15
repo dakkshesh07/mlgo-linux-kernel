@@ -104,6 +104,9 @@ export PATH="${VENV_BIN}:${PATH}"
 
 "${VENV_BIN}"/pip install "${PIP_PACKAGES[@]}"
 
+#TODO: Remove unsafe flags when package gets updated
+"${VENV_BIN}"/pip install --pre --ignore-requires-python mlgo-utils
+
 cd "${WORKING_DIR}"
 if [[ $(wget -q --output-document - "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=${LINUX_TAG}" | grep "Invalid branch") != "" ]]; then
     if [[ $(wget -q --output-document - "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/?h=${LINUX_TAG}" | grep "Invalid branch") != "" ]]; then
@@ -159,7 +162,7 @@ ninja -j"$(nproc --all)" || exit 1
 
 cd "${WORKING_DIR}"/ml-compiler-opt
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
-    "${VENV_BIN}"/python3 compiler_opt/tools/extract_ir.py \
+    "${VENV_BIN}"/extract_ir \
     --cmd_filter="^-O2|-O3" \
     --llvm_objcopy_path="${WORKING_DIR}"/llvm-build/bin/llvm-objcopy \
     --output_dir="${WORKING_DIR}"/corpus \
