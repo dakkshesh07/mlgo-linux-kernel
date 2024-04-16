@@ -17,23 +17,23 @@ set -e
 
 helpmenu() {
     echo -e "
- --arch=<arch>        : The training Linux kernel will be compiled for the given architecture.
+ --arch=<arch>        : Compiles the Linux kernel for the specified architecture for training purpose.
                             Example: $0 --arch=X86
                             Example: $0 --arch=ARM64
 
- --model=<tag>        : The flavour of mlgo optimization model to train (Regalloc or Inliner).
+ --model=<tag>        : Specifies the flavour of the mlgo optimization model to train (regalloc or inlining).
                             Example: $0 --model=regalloc
                             Example: $0 --model=inlining
 
- --linux-tag=<tag>    : Linux kernel version tag to be used for the compilation.
-                        By default latest rolling release is used if no value is given.
+ --linux-tag=<tag>    : Sets the Linux kernel version tag for compilation.
+                        The latest rolling release is used by default if no value is given.
                             Example: $0 --linux-tag=v6.6.8
                             Example: $0 --linux-tag=v5.10.205
 
- --working-dir=<dir>  : Working dir to be used for the training process.
-                        Current dir will be used if no value is given.
+ --working-dir=<dir>  : Sets the working directory for the training process.
+                        The current directory is used if no value is given.
 
- --edge-tools         : Use latest available version instead of recommended one for required pip packages"
+ --edge-tools         : Uses the latest available version instead of the recommended one for required pip packages"
 }
 
 KARCH=""
@@ -56,16 +56,16 @@ for arg in "$@"; do
             elif [[ $KARCH == "x86" ]] || [[ $KARCH == "x86_64" ]]; then
                 COMMON_CMDS+=( "-march=x86-64" )
             elif [[ $KARCH == "" ]]; then
-                echo "--arch requires a value and can not be empty."
+                echo "--arch requires a value and cannot be empty."
                 exit 1
             else
-                echo "$KARCH is not a supported architecture!"
+                echo "$KARCH is not a supported architecture."
             fi
             ;;
         "--linux-tag*")
             LINUX_TAG="${arg#*=}"
             if [[ ${LINUX_TAG} == "" ]]; then
-                echo "--linux-tag requires a value and can not be empty."
+                echo "--linux-tag requires a value and cannot be empty."
                 exit 1
             fi
             ;;
@@ -78,10 +78,10 @@ for arg in "$@"; do
                 CMD_FILTER="^-O2|-O3"
                 COMMON_CMDS+=( "-O2" )
             elif [[ ${MLGO_MODEL} == "" ]]; then
-                echo "--model requires a value and can not be empty."
+                echo "--model requires a value and cannot be empty."
                 exit 1
             else
-                echo "${MLGO_MODEL} is not a supported model type!"
+                echo "${MLGO_MODEL} is not a supported model type."
                 exit 1
             fi
             ;;
@@ -112,21 +112,21 @@ for arg in "$@"; do
 done
 
 if [[ -z "${KARCH}" ]]; then
- echo "Pass a valid architecture to compile linux kernel for via --arch flag."
+ echo "Please specify the architecture to compile the Linux kernel for using the --arch flag."
  exit 1
 fi
 
 if [[ -z "${MLGO_MODEL}" ]]; then
- echo "Pass a valid model type to train via --model flag."
+ echo "Please specify the model type to train using the --model flag."
 fi
 
 COMMON_CMDS+=( "-c" )
 
 echo ""
-echo "Arch: ${KARCH}"
-echo "Linux: ${LINUX_TAG}"
-echo "Model type: ${MLGO_MODEL}"
-echo "Working dir: ${WORKING_DIR}"
+echo "Architecture: ${KARCH}"
+echo "Linux Version: ${LINUX_TAG}"
+echo "Model Type: ${MLGO_MODEL}"
+echo "Working Directory: ${WORKING_DIR}"
 echo ""
 
 mkdir -p "${WORKING_DIR}"
@@ -252,6 +252,6 @@ PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/ppo_nn_agent.gin \
     --gin_bindings=train_eval.warmstart_policy_dir=\""${WORKING_DIR}"/warmstart/saved_policy\"
 
-echo "Model saved in: ${WORKING_DIR}/output_model_${MLGO_MODEL}"
+echo "The model is saved in: ${WORKING_DIR}/output_model_${MLGO_MODEL}"
 
 export PATH="${STOCK_PATH}"
