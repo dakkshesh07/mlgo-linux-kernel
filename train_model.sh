@@ -18,8 +18,8 @@ set -e
 helpmenu() {
     echo -e "
  --arch=<arch>        : Compiles the Linux kernel for the specified architecture for training purpose.
-                            Example: $0 --arch=X86
-                            Example: $0 --arch=ARM64
+                            Example: $0 --arch=x86
+                            Example: $0 --arch=arm64
 
  --model=<tag>        : Specifies the flavour of the mlgo optimization model to train (regalloc or inlining).
                             Example: $0 --model=regalloc
