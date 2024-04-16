@@ -55,14 +55,17 @@ for arg in "$@"; do
                 COMMON_CMDS+=( "-march=armv8.2-a" "--target=aarch64-linux-gnu" )
             elif [[ $KARCH == "x86" ]] || [[ $KARCH == "x86_64" ]]; then
                 COMMON_CMDS+=( "-march=x86-64" )
+            elif [[ $KARCH == "" ]]; then
+                echo "--arch requires a value and can not be empty."
+                exit 1
             else
-                echo "$KARCH is invalid or not supported!"
+                echo "$KARCH is not a supported architecture!"
             fi
             ;;
         "--linux-tag*")
             LINUX_TAG="${arg#*=}"
             if [[ ${LINUX_TAG} == "" ]]; then
-                echo "--linux-tag requires a value."
+                echo "--linux-tag requires a value and can not be empty."
                 exit 1
             fi
             ;;
@@ -74,6 +77,12 @@ for arg in "$@"; do
             elif [[ ${MLGO_MODEL} == "regalloc" ]]; then
                 CMD_FILTER="^-O2|-O3"
                 COMMON_CMDS+=( "-O2" )
+            elif [[ ${MLGO_MODEL} == "" ]]; then
+                echo "--model requires a value and can not be empty."
+                exit 1
+            else
+                echo "${MLGO_MODEL} is not a supported model type!"
+                exit 1
             fi
             ;;
         "--working-dir"*)
@@ -102,12 +111,22 @@ for arg in "$@"; do
     esac
 done
 
+if [[ -z "${KARCH}" ]]; then
+ echo "Pass a valid architecture to compile linux kernel for via --arch flag."
+ exit 1
+fi
+
+if [[ -z "${MLGO_MODEL}" ]]; then
+ echo "Pass a valid model type to train via --model flag."
+fi
+
 COMMON_CMDS+=( "-c" )
 
 echo ""
-echo "Arch: $KARCH"
-echo "Linux: $LINUX_TAG"
-echo "Working dir: $WORKING_DIR"
+echo "Arch: ${KARCH}"
+echo "Linux: ${LINUX_TAG}"
+echo "Model type: ${MLGO_MODEL}"
+echo "Working dir: ${WORKING_DIR}"
 echo ""
 
 mkdir -p "${WORKING_DIR}"
