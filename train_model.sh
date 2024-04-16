@@ -21,6 +21,10 @@ helpmenu() {
                             Example: $0 --arch=X86
                             Example: $0 --arch=ARM64
 
+ --model=<tag>        : The flavour of mlgo optimization model to train (Regalloc or Inliner).
+                            Example: $0 --model=regalloc
+                            Example: $0 --model=inlining
+
  --linux-tag=<tag>    : Linux kernel version tag to be used for the compilation.
                         By default latest rolling release is used if no value is given.
                             Example: $0 --linux-tag=v6.6.8
@@ -46,10 +50,11 @@ for arg in "$@"; do
     case "${arg}" in
         "--arch"*)
             KARCH="${arg#*=}"
+            COMMON_CMDS=( "-fshort-wchar" "-funsigned-char" "-fintegrated-as" "-fno-common" "-fno-PIE" "-fno-strict-overflow" "-fno-stack-check" "-fstrict-flex-arrays=3" "-nostdinc" "-fno-strict-aliasing" )
             if [[ $KARCH == "arm64" ]]; then
-                GLOBAL_CMDS='["-march=armv8.2-a", "--target=aarch64-linux-gnu", "-fshort-wchar", "-funsigned-char", "-fintegrated-as", "-fno-common", "-fno-PIE", "-O2", "-fno-strict-overflow", "-fno-stack-check", "-fstrict-flex-arrays=3", "-nostdinc", "-fno-strict-aliasing", "-c"]'
+                COMMON_CMDS+=( "-march=armv8.2-a" "--target=aarch64-linux-gnu" )
             elif [[ $KARCH == "x86" ]] || [[ $KARCH == "x86_64" ]]; then
-                GLOBAL_CMDS='["-fshort-wchar", "-funsigned-char", "-fintegrated-as", "-fno-common", "-fno-PIE", "-O2", "-fno-strict-overflow", "-fno-stack-check", "-fstrict-flex-arrays=3", "-nostdinc", "-fno-strict-aliasing", "-c"]'
+                COMMON_CMDS+=( "-march=x86-64" )
             else
                 echo "$KARCH is invalid or not supported!"
             fi
@@ -59,6 +64,16 @@ for arg in "$@"; do
             if [[ ${LINUX_TAG} == "" ]]; then
                 echo "--linux-tag requires a value."
                 exit 1
+            fi
+            ;;
+        "--model*")
+            MLGO_MODEL="${arg#*=}"
+            if [[ ${MLGO_MODEL} == "inlining" ]]; then
+                CMD_FILTER="^-O2|-Os|-Oz$"
+                COMMON_CMDS+=( "-Os" )
+            elif [[ ${MLGO_MODEL} == "regalloc" ]]; then
+                CMD_FILTER="^-O2|-O3"
+                COMMON_CMDS+=( "-O2" )
             fi
             ;;
         "--working-dir"*)
@@ -86,6 +101,8 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+COMMON_CMDS+=( "-c" )
 
 echo ""
 echo "Arch: $KARCH"
@@ -141,6 +158,9 @@ fi
 cd "${LINUX_DIR}"
 make ARCH="${KARCH}" LLVM=1 LLVM_IAS=1 O=out distclean defconfig -j"$(nproc --all)"
 ./scripts/config --file out/.config -e LTO_CLANG -d LTO_NONE -e LTO_CLANG_THIN -d LTO_CLANG_FULL -e THINLTO
+if [[ ${MLGO_MODEL} == "inlining" ]]; then
+    ./scripts/config --file out/.config -e CC_OPTIMIZE_FOR_SIZE -d CC_OPTIMIZE_FOR_PERFORMANCE
+fi
 bear -- make ARCH="${KARCH}" LLVM=1 LLVM_IAS=1 O=out -j"$(nproc --all)"
 cp compile_commands.json out/
 
@@ -163,41 +183,56 @@ ninja -j"$(nproc --all)" || exit 1
 cd "${WORKING_DIR}"/ml-compiler-opt
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     "${VENV_BIN}"/extract_ir \
-    --cmd_filter="^-O2|-O3" \
+    --cmd_filter="${CMD_FILTER}" \
     --llvm_objcopy_path="${WORKING_DIR}"/llvm-build/bin/llvm-objcopy \
     --output_dir="${WORKING_DIR}"/corpus \
     --thinlto_build=local \
     --obj_base_dir="${LINUX_DIR}"/out
 
+GLOBAL_CMDS=$(printf '%s\n' "${COMMON_CMDS[@]}" | jq -R . | jq -s .)
 jq '.global_command_override = '"${GLOBAL_CMDS}" "${WORKING_DIR}/corpus/corpus_description.json" >"${WORKING_DIR}/corpus/corpus_description.tmp" && mv "${WORKING_DIR}/corpus/corpus_description.tmp" "${WORKING_DIR}/corpus/corpus_description.json"
 
+TRACE_GEN_ARGS=(
+    "--data_path=${WORKING_DIR}/corpus"
+    "--output_path=${WORKING_DIR}/default_trace"
+    "--gin_files=compiler_opt/rl/${MLGO_MODEL}/gin_configs/common.gin"
+    "--gin_bindings=clang_path='${WORKING_DIR}/llvm-build/bin/clang'"
+    "--sampling_rate=0.5"
+)
+
+if [[ ${MLGO_MODEL} == "inlining" ]]; then
+    TRACE_GEN_ARGS+=("--gin_bindings=config_registry.get_configuration.implementation=@configs.InliningConfig"
+                        "--gin_bindings=llvm_size_path='${WORKING_DIR}/llvm-build/bin/llvm-size'")
+fi
+
+rm -rf "${WORKING_DIR}/default_trace"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     "${VENV_BIN}"/python3 compiler_opt/tools/generate_default_trace.py \
-    --data_path="${WORKING_DIR}"/corpus \
-    --output_path="${WORKING_DIR}"/default_trace \
-    --gin_files=compiler_opt/rl/regalloc/gin_configs/common.gin \
-    --gin_bindings=clang_path="'${WORKING_DIR}/llvm-build/bin/clang'" \
-    --sampling_rate=0.5
+    "${TRACE_GEN_ARGS[*]}"
 
-rm -rf ./compiler_opt/rl/regalloc/vocab
+rm -rf "${MLGO_REPO_DIR}/compiler_opt/rl/${MLGO_MODEL}/vocab"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     "${VENV_BIN}"/python3 compiler_opt/tools/generate_vocab.py \
     --input="${WORKING_DIR}"/default_trace \
-    --output_dir=./compiler_opt/rl/regalloc/vocab \
-    --gin_files=compiler_opt/rl/regalloc/gin_configs/common.gin
+    --output_dir="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/vocab \
+    --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/common.gin
 
+rm -rf "${WORKING_DIR}/warmstart"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     "${VENV_BIN}"/python3 compiler_opt/rl/train_bc.py \
     --root_dir="${WORKING_DIR}"/warmstart \
     --data_path="${WORKING_DIR}"/default_trace \
-    --gin_files=compiler_opt/rl/regalloc/gin_configs/behavioral_cloning_nn_agent.gin
+    --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/behavioral_cloning_nn_agent.gin
 
+rm -rf "${WORKING_DIR}/output_model_${MLGO_MODEL}"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     "${VENV_BIN}"/python3 compiler_opt/rl/train_locally.py \
-    --root_dir="${WORKING_DIR}"/output_model \
+    --root_dir="${WORKING_DIR}/output_model_${MLGO_MODEL}" \
     --data_path="${WORKING_DIR}"/corpus \
     --gin_bindings=clang_path="'${WORKING_DIR}/llvm-build/bin/clang'" \
-    --gin_files=compiler_opt/rl/regalloc/gin_configs/ppo_nn_agent.gin \
+    --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/ppo_nn_agent.gin \
     --gin_bindings=train_eval.warmstart_policy_dir=\""${WORKING_DIR}"/warmstart/saved_policy\"
+
+echo "Model saved in: ${WORKING_DIR}/output_model_${MLGO_MODEL}"
 
 export PATH="${STOCK_PATH}"
