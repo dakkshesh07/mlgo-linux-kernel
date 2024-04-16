@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright (C) 2023 Dakkshesh <dakkshesh5@gmail.com>
+# Copyright (C) 2024 Dakkshesh <dakkshesh5@gmail.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
