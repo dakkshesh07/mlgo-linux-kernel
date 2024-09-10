@@ -25,13 +25,13 @@ We provide pretrained regalloc models trained off of Linux kernel sources using 
 Models are released as github releases, and are named as:
 [task]-linux-[linux kernel version used for training]-[arch]-[release candidate].
 
-When building LLVM, there is a flag `-DLLVM_INLINER_MODEL_PATH` which you may
+When building LLVM, there is a flag `-DLLVM_RAEVICT_MODEL_PATH` which you may
 set to the path to your downloaded model.
 
 ```sh
 # Model is in /tmp/model, i.e. there is a file /tmp/model/saved_model.pb along
 # with the rest of the tensorflow saved_model files produced from training.
--DLLVM_INLINER_MODEL_PATH=/tmp/model
+-DLLVM_RAEVICT_MODEL_PATH=/tmp/model
 ```
 
 ## Documentation
