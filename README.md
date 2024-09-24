@@ -15,7 +15,7 @@ You can train your own model by using our scripts.
 
 example:
 ```sh
-bash train_model --arch=arm64 --model=regalloc
+bash train_model.sh --arch=arm64 --model=regalloc
 ```
 
 To know about all the supported arguments run the script with --help.
