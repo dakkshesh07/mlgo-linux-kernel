@@ -62,14 +62,14 @@ for arg in "$@"; do
                 echo "$KARCH is not a supported architecture."
             fi
             ;;
-        "--linux-tag*")
+        "--linux-tag"*)
             LINUX_TAG="${arg#*=}"
             if [[ ${LINUX_TAG} == "" ]]; then
                 echo "--linux-tag requires a value and cannot be empty."
                 exit 1
             fi
             ;;
-        "--model*")
+        "--model"*)
             MLGO_MODEL="${arg#*=}"
             if [[ ${MLGO_MODEL} == "inlining" ]]; then
                 CMD_FILTER="^-O2|-Os|-Oz$"
