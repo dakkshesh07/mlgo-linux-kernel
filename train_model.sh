@@ -131,6 +131,9 @@ echo ""
 
 mkdir -p "${WORKING_DIR}"
 
+SOURCE_DIR="${WORKING_DIR}/sources"
+mkdir -p "${SOURCE_DIR}"
+
 python -m venv "${WORKING_DIR}/venv"
 VENV_BIN="${WORKING_DIR}/venv/bin"
 VENV_LIB_PATH="${WORKING_DIR}/venv/lib/$("${VENV_BIN}"/python --version | tr 'A-Z' 'a-z' | rev | cut -d. -f2- | rev | tr -d ' ')/site-packages"
@@ -143,7 +146,7 @@ export PATH="${VENV_BIN}:${PATH}"
 #TODO: Remove unsafe flags when package gets updated
 "${VENV_BIN}"/pip install --pre --ignore-requires-python mlgo-utils
 
-cd "${WORKING_DIR}"
+cd "${SOURCE_DIR}"
 if [[ $(wget -q --output-document - "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/?h=${LINUX_TAG}" | grep "Invalid branch") != "" ]]; then
     if [[ $(wget -q --output-document - "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/?h=${LINUX_TAG}" | grep "Invalid branch") != "" ]]; then
         echo "Invalid tag: ${LINUX_TAG}"
@@ -151,18 +154,18 @@ if [[ $(wget -q --output-document - "https://git.kernel.org/pub/scm/linux/kernel
         wget "https://git.kernel.org/torvalds/t/linux-${LINUX_TAG}.tar.gz"
         tar -xf "linux-${LINUX_TAG}.tar.gz"
     fi
-    LINUX_DIR="${WORKING_DIR}/linux-${LINUX_TAG}"
+    LINUX_DIR="${SOURCE_DIR}/linux-${LINUX_TAG}"
 else
     LINUX_TAG_V="$(echo "${LINUX_TAG}" | cut -d. -f1)"
     LINUX_TAG_URL="${LINUX_TAG#*v}"
     wget "https://cdn.kernel.org/pub/linux/kernel/${LINUX_TAG_V}.x/linux-${LINUX_TAG_URL}.tar.xz"
     tar -xf "linux-${LINUX_TAG_URL}.tar.xz"
-    LINUX_DIR="${WORKING_DIR}/linux-${LINUX_TAG_URL}"
+    LINUX_DIR="${SOURCE_DIR}/linux-${LINUX_TAG_URL}"
 fi
 
-cd "${WORKING_DIR}"
-MLGO_REPO_DIR="${WORKING_DIR}/ml-compiler-opt"
-LLVM_REPO_DIR="${WORKING_DIR}/llvm-project"
+cd "${SOURCE_DIR}"
+MLGO_REPO_DIR="${SOURCE_DIR}/ml-compiler-opt"
+LLVM_REPO_DIR="${SOURCE_DIR}/llvm-project"
 git clone "https://github.com/google/ml-compiler-opt.git" --depth=1 "${MLGO_REPO_DIR}"
 git clone "https://github.com/llvm/llvm-project.git" --depth=1 "${LLVM_REPO_DIR}"
 
@@ -183,75 +186,76 @@ fi
 bear -- make ARCH="${KARCH}" LLVM=1 LLVM_IAS=1 O=out -j"$(nproc --all)"
 cp compile_commands.json out/
 
-cd "${WORKING_DIR}"
-mkdir tflite
-cd tflite
-"${WORKING_DIR}"/ml-compiler-opt/buildbot/build_tflite.sh
+OUTPUT_DIR="${WORKING_DIR}/out-${LINUX_TAG}-${KARCH}-${MLGO_MODEL}"
 
-mkdir "${WORKING_DIR}"/llvm-build
-cd "${WORKING_DIR}"/llvm-build
+mkdir -p "${OUTPUT_DIR}/tflite"
+cd "${OUTPUT_DIR}/tflite"
+"${MLGO_REPO_DIR}"/buildbot/build_tflite.sh
+
+mkdir -p "${OUTPUT_DIR}"/llvm-build
+cd "${OUTPUT_DIR}"/llvm-build
 cmake -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang" \
     -DLLVM_PARALLEL_COMPILE_JOBS="$(nproc --all)" \
     -DLLVM_PARALLEL_LINK_JOBS="$(nproc --all)" \
-    -C "${WORKING_DIR}"/tflite/tflite.cmake \
-    "${WORKING_DIR}"/llvm-project/llvm
+    -C "${OUTPUT_DIR}"/tflite/tflite.cmake \
+    "${LLVM_REPO_DIR}"/llvm
 ninja -j"$(nproc --all)" || exit 1
 
-cd "${WORKING_DIR}"/ml-compiler-opt
-PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
+cd "${MLGO_REPO_DIR}"
+PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
     "${VENV_BIN}"/extract_ir \
     --cmd_filter="${CMD_FILTER}" \
-    --llvm_objcopy_path="${WORKING_DIR}"/llvm-build/bin/llvm-objcopy \
-    --output_dir="${WORKING_DIR}"/corpus \
+    --llvm_objcopy_path="${OUTPUT_DIR}"/llvm-build/bin/llvm-objcopy \
+    --output_dir="${OUTPUT_DIR}"/corpus \
     --thinlto_build=local \
     --obj_base_dir="${LINUX_DIR}"/out
 
 GLOBAL_CMDS=$(printf '%s\n' "${COMMON_CMDS[@]}" | jq -R . | jq -s .)
-jq '.global_command_override = '"${GLOBAL_CMDS}" "${WORKING_DIR}/corpus/corpus_description.json" >"${WORKING_DIR}/corpus/corpus_description.tmp" && mv "${WORKING_DIR}/corpus/corpus_description.tmp" "${WORKING_DIR}/corpus/corpus_description.json"
+jq '.global_command_override = '"${GLOBAL_CMDS}" "${OUTPUT_DIR}/corpus/corpus_description.json" >"${OUTPUT_DIR}/corpus/corpus_description.tmp" && mv "${OUTPUT_DIR}/corpus/corpus_description.tmp" "${OUTPUT_DIR}/corpus/corpus_description.json"
 
 TRACE_GEN_ARGS=(
-    "--data_path=${WORKING_DIR}/corpus"
-    "--output_path=${WORKING_DIR}/default_trace"
+    "--data_path=${OUTPUT_DIR}/corpus"
+    "--output_path=${OUTPUT_DIR}/default_trace"
     "--gin_files=compiler_opt/rl/${MLGO_MODEL}/gin_configs/common.gin"
-    "--gin_bindings=clang_path='${WORKING_DIR}/llvm-build/bin/clang'"
+    "--gin_bindings=clang_path='${OUTPUT_DIR}/llvm-build/bin/clang'"
     "--sampling_rate=0.5"
 )
 
 if [[ ${MLGO_MODEL} == "inlining" ]]; then
     TRACE_GEN_ARGS+=("--gin_bindings=config_registry.get_configuration.implementation=@configs.InliningConfig"
-                        "--gin_bindings=llvm_size_path='${WORKING_DIR}/llvm-build/bin/llvm-size'")
+                        "--gin_bindings=llvm_size_path='${OUTPUT_DIR}/llvm-build/bin/llvm-size'")
 fi
 
-rm -rf "${WORKING_DIR}/default_trace"
-PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
+rm -rf "${OUTPUT_DIR}/default_trace"
+PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
     "${VENV_BIN}"/python3 compiler_opt/tools/generate_default_trace.py \
     "${TRACE_GEN_ARGS[*]}"
 
 rm -rf "${MLGO_REPO_DIR}/compiler_opt/rl/${MLGO_MODEL}/vocab"
-PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
+PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
     "${VENV_BIN}"/python3 compiler_opt/tools/generate_vocab.py \
-    --input="${WORKING_DIR}"/default_trace \
+    --input="${OUTPUT_DIR}"/default_trace \
     --output_dir="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/vocab \
     --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/common.gin
 
-rm -rf "${WORKING_DIR}/warmstart"
-PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
+rm -rf "${OUTPUT_DIR}/warmstart"
+PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
     "${VENV_BIN}"/python3 compiler_opt/rl/train_bc.py \
-    --root_dir="${WORKING_DIR}"/warmstart \
-    --data_path="${WORKING_DIR}"/default_trace \
+    --root_dir="${OUTPUT_DIR}"/warmstart \
+    --data_path="${OUTPUT_DIR}"/default_trace \
     --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/behavioral_cloning_nn_agent.gin
 
-rm -rf "${WORKING_DIR}/output_model_${MLGO_MODEL}"
-PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
+rm -rf "${OUTPUT_DIR}/output_model_${MLGO_MODEL}"
+PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
     "${VENV_BIN}"/python3 compiler_opt/rl/train_locally.py \
-    --root_dir="${WORKING_DIR}/output_model_${MLGO_MODEL}" \
-    --data_path="${WORKING_DIR}"/corpus \
-    --gin_bindings=clang_path="'${WORKING_DIR}/llvm-build/bin/clang'" \
+    --root_dir="${OUTPUT_DIR}/output_model_${MLGO_MODEL}" \
+    --data_path="${OUTPUT_DIR}"/corpus \
+    --gin_bindings=clang_path="'${OUTPUT_DIR}/llvm-build/bin/clang'" \
     --gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/ppo_nn_agent.gin \
-    --gin_bindings=train_eval.warmstart_policy_dir=\""${WORKING_DIR}"/warmstart/saved_policy\"
+    --gin_bindings=train_eval.warmstart_policy_dir=\""${OUTPUT_DIR}"/warmstart/saved_policy\"
 
-echo "The model is saved in: ${WORKING_DIR}/output_model_${MLGO_MODEL}"
+echo "The model is saved in: ${OUTPUT_DIR}/output_model_${MLGO_MODEL}"
 
 export PATH="${STOCK_PATH}"
