@@ -45,6 +45,7 @@ PIP_PACKAGES=("absl-py==1.0.0"
     "tf-agents==0.16.0"
     "tensorflow==2.12.0"
     "dm-reverb==0.11.0")
+LLVM_BIN_DIR=$(readlink -f "$(which clang)" | rev | cut -d'/' -f2- | rev)
 
 for arg in "$@"; do
     case "${arg}" in
@@ -91,6 +92,14 @@ for arg in "$@"; do
                 echo "--working-dir requires a value."
                 exit 1
             fi
+            ;;
+        "--clang-bin"*)
+            CLANG_BIN="${arg#*=}"
+            if [[ ${CLANG_BIN} == "" ]]; then
+                echo "--clang-bin requires a value and cannot be empty."
+                exit 1
+            fi
+            LLVM_BIN_DIR=$(readlink -f "$(which ${CLANG_BIN})" | rev | cut -d'/' -f2- | rev)
             ;;
         "--edge-tools")
             PIP_PACKAGES=("absl-py"
@@ -174,13 +183,28 @@ else
     exit 1
 fi
 
+KMAKEFLAGS=("LLVM=1"
+    "LLVM_IAS=1"
+    "CC=${LLVM_BIN_DIR}/clang"
+    "LD=${LLVM_BIN_DIR}/ld.lld"
+    "AR=${LLVM_BIN_DIR}/llvm-ar"
+    "NM=${LLVM_BIN_DIR}/llvm-nm"
+    "STRIP=${LLVM_BIN_DIR}/llvm-strip"
+    "OBJCOPY=${LLVM_BIN_DIR}/llvm-objcopy"
+    "OBJDUMP=${LLVM_BIN_DIR}/llvm-objdump"
+    "READELF=${LLVM_BIN_DIR}/llvm-readelf"
+    "HOSTCC=${LLVM_BIN_DIR}/clang"
+    "HOSTCXX=${LLVM_BIN_DIR}/clang++"
+    "HOSTAR=${LLVM_BIN_DIR}/llvm-ar"
+    "HOSTLD=${LLVM_BIN_DIR}/ld.lld")
+
 cd "${LINUX_DIR}"
-make ARCH="${KARCH}" LLVM=1 LLVM_IAS=1 O=out distclean defconfig -j"$(nproc --all)"
+make ARCH="${KARCH}" "${KMAKEFLAGS[@]}" O=out distclean defconfig -j"$(nproc --all)"
 ./scripts/config --file out/.config -e LTO_CLANG -d LTO_NONE -e LTO_CLANG_THIN -d LTO_CLANG_FULL -e THINLTO
 if [[ ${MLGO_MODEL} == "inlining" ]]; then
     ./scripts/config --file out/.config -e CC_OPTIMIZE_FOR_SIZE -d CC_OPTIMIZE_FOR_PERFORMANCE
 fi
-bear -- make ARCH="${KARCH}" LLVM=1 LLVM_IAS=1 O=out -j"$(nproc --all)"
+bear -- make ARCH="${KARCH}" "${KMAKEFLAGS[@]}" O=out -j"$(nproc --all)"
 cp compile_commands.json out/
 
 cd "${WORKING_DIR}"
@@ -193,6 +217,18 @@ cd "${WORKING_DIR}"/llvm-build
 cmake -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS="clang" \
+    -DCMAKE_C_COMPILER="${LLVM_BIN_DIR}"/clang \
+    -DCMAKE_CXX_COMPILER="${LLVM_BIN_DIR}"/clang++ \
+    -DCMAKE_AR="${LLVM_BIN_DIR}"/llvm-ar \
+    -DCMAKE_NM="${LLVM_BIN_DIR}"/llvm-nm \
+    -DCMAKE_STRIP="${LLVM_BIN_DIR}"/llvm-strip \
+    -DLLVM_USE_LINKER="${LLVM_BIN_DIR}"/ld.lld \
+    -DCMAKE_LINKER="${LLVM_BIN_DIR}"/ld.lld \
+    -DCMAKE_OBJCOPY="${LLVM_BIN_DIR}"/llvm-objcopy \
+    -DCMAKE_OBJDUMP="${LLVM_BIN_DIR}"/llvm-objdump \
+    -DCMAKE_RANLIB="${LLVM_BIN_DIR}"/llvm-ranlib \
+    -DCMAKE_READELF="${LLVM_BIN_DIR}"/llvm-readelf \
+    -DCMAKE_ADDR2LINE="${LLVM_BIN_DIR}"/llvm-addr2line \
     -DLLVM_PARALLEL_COMPILE_JOBS="$(nproc --all)" \
     -DLLVM_PARALLEL_LINK_JOBS="$(nproc --all)" \
     -C "${WORKING_DIR}"/tflite/tflite.cmake \
