@@ -240,6 +240,7 @@ cmake -G Ninja \
 ninja -j"$(nproc --all)" || exit 1
 
 cd "${MLGO_REPO_DIR}"
+rm -rf "${OUTPUT_DIR}/corpus"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
 	"${VENV_BIN}"/extract_ir \
 	--cmd_filter="${CMD_FILTER}" \
@@ -254,7 +255,7 @@ jq '.global_command_override = '"${GLOBAL_CMDS}" "${OUTPUT_DIR}/corpus/corpus_de
 TRACE_GEN_ARGS=(
 	"--data_path=${OUTPUT_DIR}/corpus"
 	"--output_path=${OUTPUT_DIR}/default_trace"
-	"--gin_files=compiler_opt/rl/${MLGO_MODEL}/gin_configs/common.gin"
+	"--gin_files=${MLGO_REPO_DIR}/compiler_opt/rl/${MLGO_MODEL}/gin_configs/common.gin"
 	"--gin_bindings=clang_path='${OUTPUT_DIR}/llvm-build/bin/clang'"
 	"--sampling_rate=1"
 )
@@ -262,34 +263,36 @@ TRACE_GEN_ARGS=(
 if [[ ${MLGO_MODEL} == "inlining" ]]; then
 	TRACE_GEN_ARGS+=("--gin_bindings=config_registry.get_configuration.implementation=@configs.InliningConfig"
 		"--gin_bindings=llvm_size_path='${OUTPUT_DIR}/llvm-build/bin/llvm-size'")
+else
+	TRACE_GEN_ARGS+=("--gin_bindings=config_registry.get_configuration.implementation=@configs.RegallocEvictionConfig")
 fi
 
 rm -rf "${OUTPUT_DIR}/default_trace"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
-	"${VENV_BIN}"/python3 compiler_opt/tools/generate_default_trace.py \
+	"${VENV_BIN}"/python3 "${MLGO_REPO_DIR}"/compiler_opt/tools/generate_default_trace.py \
 	"${TRACE_GEN_ARGS[*]}"
 
 rm -rf "${MLGO_REPO_DIR}/compiler_opt/rl/${MLGO_MODEL}/vocab"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
-	"${VENV_BIN}"/python3 compiler_opt/tools/generate_vocab.py \
+	"${VENV_BIN}"/python3 "${MLGO_REPO_DIR}"/compiler_opt/tools/generate_vocab.py \
 	--input="${OUTPUT_DIR}"/default_trace \
 	--output_dir="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/vocab \
 	--gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/common.gin
 
 rm -rf "${OUTPUT_DIR}/warmstart"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
-	"${VENV_BIN}"/python3 compiler_opt/rl/train_bc.py \
+	"${VENV_BIN}"/python3 "${MLGO_REPO_DIR}"/compiler_opt/rl/train_bc.py \
 	--root_dir="${OUTPUT_DIR}"/warmstart \
 	--data_path="${OUTPUT_DIR}"/default_trace \
 	--gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/behavioral_cloning_nn_agent.gin
 
 rm -rf "${OUTPUT_DIR}/output_model_${MLGO_MODEL}"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${MLGO_REPO_DIR}" \
-	"${VENV_BIN}"/python3 compiler_opt/rl/train_locally.py \
+	"${VENV_BIN}"/python3 "${MLGO_REPO_DIR}"/compiler_opt/rl/train_locally.py \
 	--root_dir="${OUTPUT_DIR}/output_model_${MLGO_MODEL}" \
 	--data_path="${OUTPUT_DIR}"/corpus \
-	--gin_bindings=clang_path="'${OUTPUT_DIR}/llvm-build/bin/clang'" \
 	--gin_files="${MLGO_REPO_DIR}"/compiler_opt/rl/"${MLGO_MODEL}"/gin_configs/ppo_nn_agent.gin \
+	--gin_bindings=clang_path="'${OUTPUT_DIR}/llvm-build/bin/clang'" \
 	--gin_bindings=train_eval.warmstart_policy_dir=\""${OUTPUT_DIR}"/warmstart/saved_policy\"
 
 echo "The model is saved in: ${OUTPUT_DIR}/output_model_${MLGO_MODEL}"
