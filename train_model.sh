@@ -252,7 +252,7 @@ TRACE_GEN_ARGS=(
     "--output_path=${WORKING_DIR}/default_trace"
     "--gin_files=compiler_opt/rl/${MLGO_MODEL}/gin_configs/common.gin"
     "--gin_bindings=clang_path='${WORKING_DIR}/llvm-build/bin/clang'"
-    "--sampling_rate=0.5"
+    "--sampling_rate=1"
 )
 
 if [[ ${MLGO_MODEL} == "inlining" ]]; then
