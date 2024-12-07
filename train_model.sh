@@ -236,6 +236,7 @@ cmake -G Ninja \
 ninja -j"$(nproc --all)" || exit 1
 
 cd "${WORKING_DIR}"/ml-compiler-opt
+rm -rf "${OUTPUT_DIR}/corpus"
 PYTHONPATH="${VENV_LIB_PATH}:$PYTHONPATH:${WORKING_DIR}/ml-compiler-opt" \
     "${VENV_BIN}"/extract_ir \
     --cmd_filter="${CMD_FILTER}" \
